@@ -15,4 +15,5 @@ dependencies:
   - geopandas
   - cartopy
   - scikit-learn
+  - metpy
 prefix: C:\W10Dev\Anaconda3\envs\sktime

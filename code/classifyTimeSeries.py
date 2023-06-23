@@ -31,9 +31,9 @@ np.random.seed(1000)
 # Following can be put into command line args or config file:
 BASEDIR = r"X:\georisk\HaRIA_B_Wind\data\derived\obs\1-minute\events"
 OUTPUTPATH = pjoin(r"X:\georisk\HaRIA_B_Wind\data\derived\obs\1-minute\events-60", "results")  # noqa
-LOGGER = flStartLog(pjoin(OUTPUTPATH, "classifyTimeSeries.log"), "INFO", verbose=True)  # noqa
-stndf = pd.read_csv(pjoin(BASEDIR, 'hqstations.csv'), index_col="stnNum")
-eventFile = pjoin(BASEDIR, "CA_20230518_Hobart.csv")
+LOGGER = flStartLog(r"..\output\classifyTimeSeries.log", "INFO", verbose=True)  # noqa
+stndf = pd.read_csv(r"..\data\hqstations.csv", index_col="stnNum")
+eventFile = r"..\output\visual_storm_types.csv"
 
 # This is the visually classified training dataset:
 stormdf = pd.read_csv(eventFile, usecols=[1, 2, 3], parse_dates=['date'],
@@ -161,22 +161,23 @@ for stn in stndf.index:
     df = loadData(stn, BASEDIR)
     dflist.append(df)
 
-alldf = pd.concat(dflist)
-alldf['idx'] = alldf.index
-
+vcdf = pd.concat(dflist)
+vcdf['idx'] = vcdf.index
 
 
 # Split into a preliminary training and test dataset:
 LOGGER.info("Splitting the visually classified data into test and train sets")
-eventdf_train = alldf.loc[train_storms.index]
-eventdf_test = alldf.loc[test_storms.index]
+eventdf_train = vcdf.loc[train_storms.index]
+eventdf_test = vcdf.loc[test_storms.index]
 
 vars = ['windgust', 'tempanom', 'stnpanom', 'dpanom']
 nvars = len(vars)
 # Apply a standard scaler (zero mean and unit variance):
-# scaler = StandardScaler()
-# eventdf_train[vars] = scaler.fit_transform(eventdf_train[vars].values)
-# eventdf_test[vars] = scaler.transform(eventdf_test[vars].values)
+# testscaler = StandardScaler()
+# eventdf_train[vars] = testscaler.fit_transform(eventdf_train[vars].values)
+# eventdf_test[vars] = testscaler.transform(eventdf_test[vars].values)
+# fullscaler = StandardScaler()
+# vcdf[vars] = fullscaler.fit_transform(vcdf[vars].values)
 
 X = eventdf_train.reset_index().set_index(['idx', 'tdiff'])[vars]
 XX = np.moveaxis(X.values.reshape((ntrain, 121, nvars)), 1, -1)
@@ -187,7 +188,7 @@ XX_test = np.moveaxis(X_test.values.reshape((200, 121, nvars)), 1, -1)
 
 # Here we use the full set of visually classified events for training
 # the classifier:
-fulltrain = (alldf.loc[stormdf.index]
+fulltrain = (vcdf.loc[stormdf.index]
              .reset_index()
              .set_index(['idx', 'tdiff'])[vars])
 fulltrainarray = np.moveaxis(
@@ -246,6 +247,7 @@ for stn in allstndf.index:
 
 alldatadf = pd.concat(alldatadflist)
 alldatadf['idx'] = alldatadf.index
+# alldatadf[vars] = fullscaler.transform(alldatadf[vars].values)
 allX = alldatadf.reset_index().set_index(['idx', 'tdiff'])[vars]
 
 # Remove any events that have < 121 observations, or have missing

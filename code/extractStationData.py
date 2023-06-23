@@ -307,7 +307,7 @@ def wdir_diff(wd1, wd2):
     return res
 
 
-def extractDailyMax(filename, stnState, stnName, stnNum, outputDir,
+def extractDailyMax(filename, stnState, stnName, stnNum,
                     variable='windgust', threshold=90.):
     """
     Extract daily maximum value of `variable` from 1-minute observation records
@@ -315,7 +315,6 @@ def extractDailyMax(filename, stnState, stnName, stnNum, outputDir,
 
     :param filename: str, path object or file-like object
     :param stnState: str, station State (for determining local time zone)
-    :param str outputDir: Path to output directory for storing plots
     :param str variable: the variable to extract daily maximum values,
         default "windgust"
     :param float threshold: Threshold value of `variable` for additional
@@ -325,41 +324,6 @@ def extractDailyMax(filename, stnState, stnName, stnNum, outputDir,
 
     """
 
-    # 2022 version
-    names = ['id', 'stnNum',
-             'YYYY', 'MM', 'DD', 'HH', 'MI',
-             'YYYYl', 'MMl', 'DDl', 'HHl', 'MIl',
-             'rainfall', 'rainq', 'rain_duration',
-             'temp', 'tempq',
-             'temp1max', 'temp1maxq',
-             'temp1min', 'temp1minq',
-             'wbtemp', 'wbtempq',
-             'dewpoint', 'dewpointq',
-             'rh', 'rhq',
-             'windspd', 'windspdq',
-             'windmin', 'windminq',
-             'winddir', 'winddirq',
-             'windsd', 'windsdq',
-             'windgust', 'windgustq',
-             'mslp', 'mslpq', 'stnp', 'stnpq',
-             'end']
-    dtypes = {'id': str, 'stnNum': int,
-              'YYYY': int, "MM": int, "DD": int, "HH": int, "MI": int,
-              'YYYYl': int, "MMl": int, "DDl": int, "HHl": int, "MIl": int,
-              'rainfall': float, 'rainq': str, 'rain_duration': float,
-              'temp': float, 'tempq': str,
-              'temp1max': float, 'temp1maxq': str,
-              'temp1min': float, 'temp1minq': str,
-              'wbtemp': float, 'wbtempq': str,
-              'dewpoint': float, 'dewpointq': str,
-              'rh': float, 'rhq': str,
-              'windspd': float, 'windspdq': str,
-              'windmin': float, 'windminq': str,
-              'winddir': float, 'winddirq': str,
-              'windsd': float, 'windsdq': str,
-              'windgust': float, 'windgustq': str,
-              'mslp': float, 'mslpq': str,
-              'stnp': float, 'stnpq': str, 'end': str}
     LOGGER.debug(f"Reading station data from {filename}")
     try:
         df = pd.read_csv(filename, sep=',', index_col=False,
@@ -419,6 +383,8 @@ def extractDailyMax(filename, stnState, stnName, stnNum, outputDir,
                      .rolling('1800s')['winddir']
                      .apply(lambda x: wdir_diff(x[-1], x[0]))
                      .max())
+
+        # Emergence: ratio of highest gust to average of next 10 highest
         emerg = maxgust / df.loc[startdt: enddt]['windgust'].nlargest(11)[1:].mean()  # noqa: E501
         dfdata.loc[idx] = [maxgust/meangust, pretemp, posttemp, maxtempchange,
                            mintempchange, dirchange, prsdrop, prsrise, emerg]
