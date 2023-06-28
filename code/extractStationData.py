@@ -39,7 +39,7 @@ from configparser import ConfigParser, ExtendedInterpolation
 import pandas as pd
 import numpy as np
 import seaborn as sns
-from prov import ProvDocument
+from prov.model import ProvDocument
 from metpy.calc import wind_components
 from metpy.units import units
 import matplotlib
@@ -71,6 +71,8 @@ prov.add_namespace('xsd', 'http://www.w3.org/2001/XMLSchema#')
 prov.add_namespace('foaf', 'http://xmlns.com/foaf/0.1/')
 prov.add_namespace('void', 'http://vocab.deri.ie/void#')
 prov.add_namespace('dcterms', 'http://purl.org/dc/terms/')
+provlabel = ":stormDataExtraction"
+provtitle = "Storm data extraction"
 
 def start():
     """
@@ -222,7 +224,7 @@ def processFiles(config):
         if pAlreadyProcessed(directory, fname, "md5sum", md5sum):
             LOGGER.info(f"Already processed {f}")
         else:
-            if processFile(f, outputDir):
+            if processFile(f, config):
                 LOGGER.info(f"Successfully processed {f}")
                 pWriteProcessedFile(f)
                 if archiveWhenProcessed:
@@ -231,18 +233,24 @@ def processFiles(config):
                     os.unlink(f)
 
 
-def processFile(filename: str, outputDir: str) -> bool:
+def processFile(filename: str, config) -> bool:
     """
     process a file and store output in the given output directory
 
     :param str filename: path to a station data file
-    :param str outputDir: Output path for data & figures to be saved
+    :param config:  `ConfigParser` object
     """
 
-    global g_stations
 
+    global g_stations
+    outputFormat = config.get('Output', 'Format', fallback='pickle')
+    outputDir = config.get('Output', 'Path')
+    threshold = config.getfloat('Input', 'Threshold')
+    ext = "pkl" if outputFormat=='pickle' else 'csv'
+    outfunc = "to_pickle" if outputFormat=='pickle' else 'to_csv'
     LOGGER.info(f"Loading data from {filename}")
     LOGGER.debug(f"Data will be written to {outputDir}")
+    LOGGER.debug(f"Using {outputFormat} for output data")
     m = PATTERN.match(filename)
     stnNum = int(m.group(1))
     stnState = g_stations.loc[stnNum, 'stnState']
@@ -253,18 +261,24 @@ def processFile(filename: str, outputDir: str) -> bool:
         LOGGER.warning(f"Zero-sized file: {filename}")
         rc = False
     else:
-        basename = f"{stnNum:06d}.pkl"  # os.path.basename(filename)
+
+        basename = f"{stnNum:06d}.{ext}"  # os.path.basename(filename)
         dfmax, dfmean, eventdf = extractDailyMax(filename, stnState, stnName,
-                                                 stnNum, outputDir,
-                                                 threshold=60)
+                                                 stnNum, 'windgust',
+                                                 threshold=threshold)
         if dfmax is None:
             LOGGER.warning(f"No data returned for {filename}")
         else:
             LOGGER.debug(f"Writing data to {pjoin(outputDir, 'dailymax', basename)}")  # noqa: E501
+            getattr(dfmax, outfunc)(pjoin(outputDir, 'dailymax', basename))
+            getattr(dfmean, outfunc)(pjoin(outputDir, 'dailymean', basename))
+
             dfmax.to_pickle(pjoin(outputDir, 'dailymax', basename))
             dfmean.to_pickle(pjoin(outputDir, 'dailymean', basename))
             if eventdf is not None:
                 LOGGER.debug(f"Writing data to {pjoin(outputDir, 'events', basename)}")  # noqa: E501
+                getattr(eventdf, outfunc)(pjoin(outputDir, 'events', basename))
+
                 eventdf.to_pickle(pjoin(outputDir, 'events', basename))
         rc = True
     return rc
@@ -464,86 +478,6 @@ def windComponents(windspd, winddir):
     uanom = u.magnitude - np.nanmean(u.magnitude)
     vanom = v.magnitude - np.nanmean(v.magnitude)
     return u.magnitude, v.magnitude, uanom, vanom
-
-
-def plotEvent(df: pd.DataFrame, dt: datetime, stnName: str,
-              stnNum: int, outputDir: str, filename: str):
-    """
-    Plot a time history of the event, including the preceding
-    and following hour of data
-
-
-    :param df: `pd.DataFrame` containing the data
-    :param dt: `datetime` object of a gust event
-    :param str stnName: Station name
-    :param int stnNum: Station identifier
-    :param str outputDir: Output directory for data and figures
-    :param str filename: Name of the file
-    """
-
-    LOGGER.debug(f"Plotting data for {filename} on {dt.strftime('%Y-%m-%d')}")
-    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-    df.set_index('tdiff', inplace=True)
-    x = df.index
-    lns1 = ax.plot(x, df['windgust'], 'ko-', markerfacecolor='white',
-                   label="Gust speed [km/h]")
-    ax2 = ax.twinx()
-    ax3 = ax.twinx()
-    ax4 = ax.twinx()
-    ax5 = ax.twinx()
-    lns2 = ax2.plot(x, df['windchange'], 'go', markersize=3,
-                    markerfacecolor='w', label='Wind direction change')
-    lns3 = ax3.plot(x, df['tempanom'], 'r',
-                    label=r"Temperature anomaly [$^{o}$C]")
-    lns4 = ax4.plot(x, df['stnpanom'], 'purple',
-                    label="Pressure anomaly [hPa]")
-    lns5 = ax5.bar(x, df['rainfall'], width=0.75,
-                   label='Rainfall [mm]', color='b', alpha=0.5)
-    ax3.spines['right'].set_position(("axes", 1.1))
-    ax4.spines['right'].set_position(("axes", 1.2))
-    ax5.spines['right'].set_position(("axes", 1.3))
-    ax2.spines[['right']].set_color(lns2[0].get_color())
-    ax3.spines[['right']].set_color(lns3[0].get_color())
-    ax4.spines[['right']].set_color(lns4[0].get_color())
-    ax5.spines[['right']].set_color('b')
-
-    ax2.yaxis.label.set_color(lns2[0].get_color())
-    ax3.yaxis.label.set_color(lns3[0].get_color())
-    ax4.yaxis.label.set_color(lns4[0].get_color())
-    ax5.yaxis.label.set_color('b')
-
-    ymin, ymax = ax.get_ylim()
-    ax.set_ylim((0, max(100, ymax)))
-    # Fix the range of the wind change plot
-    ax2.set_ylim((0, 180))
-    # Set the rainfall limits to be 2 or higher
-    ymin, ymax = ax5.get_ylim()
-    ax5.set_ylim((0, max(2, ymax)))
-
-    ax2.tick_params(axis='y', colors=lns2[0].get_color())
-    ax3.tick_params(axis='y', colors=lns3[0].get_color())
-    ax4.tick_params(axis='y', colors=lns4[0].get_color())
-    ax5.tick_params(axis='y', colors='b')
-    ax2.set_ylabel(r"Wind direction change [$^{\circ}$]")
-    ax3.set_ylabel(r"Temperature anomaly [$^{\circ}$C]")
-    ax4.set_ylabel(r"Pressure anomaly [hPa]")
-    ax5.set_ylabel(r"Rainfall [mm]")
-    ax2.grid(False)
-    ax3.grid(False)
-    ax4.grid(False)
-    ax5.grid(False)
-
-    ax.set_xlabel("Minutes")
-    ax.set_ylabel("Gust wind speed [km/h]")
-
-    ax.set_title(f"{stnName.rstrip()} ({stnNum}) {dt.strftime('%Y-%m-%d %H:%M UTC')}")  # noqa: E501
-    dtstring = dt.strftime("%Y%m%d")
-    basename = os.path.basename(filename)
-    figname = basename.replace(".txt", f".{dtstring}.png")
-    figname = os.path.join(outputDir, 'plots', figname)
-    plt.savefig(figname, bbox_inches="tight")
-    plt.close(fig)
-    return
 
 
 def dt(*args):
