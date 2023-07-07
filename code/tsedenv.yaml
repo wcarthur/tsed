@@ -9,9 +9,12 @@ dependencies:
   - matplotlib
   - pandas
   - pytz
+  - lxml
+  - prov
   - seaborn
   - sktime-all-extras
   - gitpython
+  - fiona
   - geopandas
   - cartopy
   - scikit-learn

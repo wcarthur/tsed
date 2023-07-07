@@ -22,7 +22,7 @@ option to `True` and define `ArchiveDir` as a writable path.
 
 To run:
 
-python extractStationData.py -c extract_daily_1minmax.ini
+python extractStationData.py -c extract_allevents.ini
 
 
 
@@ -30,8 +30,11 @@ python extractStationData.py -c extract_daily_1minmax.ini
 
 import os
 import re
+import sys
+import time
 import glob
 import argparse
+import getpass
 import logging
 from os.path import join as pjoin
 from datetime import datetime, timedelta
@@ -48,7 +51,7 @@ import matplotlib.pyplot as plt
 import warnings
 
 from process import pAlreadyProcessed, pWriteProcessedFile, pArchiveFile, pInit
-from files import flStartLog, flGetStat, flSize
+from files import flStartLog, flGetStat, flSize, flGitRepository, flPathTime
 from stndata import ONEMINUTESTNNAMES, ONEMINUTEDTYPE, ONEMINUTENAMES
 
 
@@ -63,6 +66,8 @@ STNFILE = re.compile(r".*StnDet.*\.txt")
 TZ = {"QLD": 10, "NSW": 10, "VIC": 10,
       "TAS": 10, "SA": 9.5, "NT": 9.5,
       "WA": 8, "ANT": 0}
+
+DATEFMT = "%Y-%m-%d %H:%M:%S"
 
 prov = ProvDocument()
 prov.set_default_namespace("")
@@ -91,6 +96,7 @@ def start():
                           interpolation=ExtendedInterpolation())
     config.optionxform = str
     config.read(configFile)
+    config.configFile = configFile
 
     pInit(configFile)
     main(config, verbose)
@@ -104,16 +110,44 @@ def main(config, verbose=False):
     :param boolean verbose: If `True`, print logging messages to STDOUT
 
     """
-
     logfile = config.get('Logging', 'LogFile')
     loglevel = config.get('Logging', 'LogLevel', fallback='INFO')
     verbose = config.getboolean('Logging', 'Verbose', fallback=verbose)
     datestamp = config.getboolean('Logging', 'Datestamp', fallback=False)
     LOGGER = flStartLog(logfile, loglevel, verbose, datestamp)
+    outputDir = config.get('Output', 'Path', fallback='')
+    starttime = datetime.now().strftime(DATEFMT)
+    commit, tag, dt, url = flGitRepository(sys.argv[0])
+    prov.agent(provlabel,
+               {"prov:type": "prov:SoftwareAgent",
+                "prov:Revision": commit,
+                "prov:tag": tag,
+                "prov:date": dt,
+                "prov:url": url})
+    prov.agent(f":{getpass.getuser()}",
+               {"prov:type": "foaf:Person"})
+    configent = prov.entity(
+        ":configurationFile",
+        {"dcterms:title": "Configuration file",
+         "prov:type": 'foaf:Document',
+         "prov:format": "Text file",
+         "prov:atLocation": os.path.basename(config.configFile)
+            },
+               )
+    prov.actedOnBehalfOf(provlabel, f":{getpass.getuser()}")
+    prov.wasInformedBy(provlabel, configent)
 
     ListAllFiles(config)
+
     processStationFiles(config)
     processFiles(config)
+
+    endtime = datetime.now().strftime(DATEFMT)
+    prov.activity(provlabel, starttime, endtime,
+                  {"dcterms:title": provtitle,
+                  "prov:type": "void:Extraction"}
+                )
+    prov.serialize(pjoin(outputDir, 'extraction.xml'), format='xml')
 
 
 def ListAllFiles(config):
@@ -154,6 +188,12 @@ def expandFileSpec(config, spec, category):
 
     origindir = config.get(category, 'OriginDir',
                            fallback=config.get('Defaults', 'OriginDir'))
+    dirmtime = flPathTime(origindir)
+    specent = prov.entity(f":{spec}",
+                          {"prov:type": "Collection",
+                           "prov:atLocation": origindir,
+                           "prov:GeneratedAt": dirmtime})
+    prov.used(provlabel, specent)
     spec = pjoin(origindir, spec)
     files = glob.glob(spec)
     LOGGER.info(f"{len(files)} {spec} files to be processed")
@@ -164,6 +204,14 @@ def expandFileSpec(config, spec, category):
 
 
 def expandFileSpecs(config, specs, category):
+    """
+    Expand a collection of file specifications
+
+    :param config: `ConfigParser` object
+    :param list specs: list of file specifications to expand
+    :param str category: A category that has a section in the source
+        configuration file
+    """
     for spec in specs:
         expandFileSpec(config, spec, category)
 
@@ -278,8 +326,9 @@ def processFile(filename: str, config) -> bool:
             if eventdf is not None:
                 LOGGER.debug(f"Writing data to {pjoin(outputDir, 'events', basename)}")  # noqa: E501
                 getattr(eventdf, outfunc)(pjoin(outputDir, 'events', basename))
-
                 eventdf.to_pickle(pjoin(outputDir, 'events', basename))
+                e1 = prov.entity(filename)
+                prov.wasDerivedFrom(provlabel, e1)
         rc = True
     return rc
 
