@@ -29,11 +29,11 @@ from files import flStartLog
 np.random.seed(1000)
 
 # Following can be put into command line args or config file:
-BASEDIR = r"X:\georisk\HaRIA_B_Wind\data\derived\obs\1-minute\events"
-OUTPUTPATH = pjoin(r"X:\georisk\HaRIA_B_Wind\data\derived\obs\1-minute\events-60", "results")  # noqa
-LOGGER = flStartLog(r"..\output\classifyTimeSeries.log", "INFO", verbose=True)  # noqa
+BASEDIR = r"..\data\training"
+OUTPUTPATH = pjoin(r"..\data\allevents", "results")
+LOGGER = flStartLog(r"..\output\classifyTimeSeries.log", "INFO", verbose=True)
 stndf = pd.read_csv(r"..\data\hqstations.csv", index_col="stnNum")
-eventFile = r"..\output\visual_storm_types.csv"
+eventFile = pjoin(BASEDIR, "visual_storm_types.csv")
 
 # This is the visually classified training dataset:
 stormdf = pd.read_csv(eventFile, usecols=[1, 2, 3], parse_dates=['date'],
@@ -222,7 +222,7 @@ stormclasses = ['Synoptic storm', 'Synoptic front', 'Storm-burst',
                 'Spike', 'Unclassified']
 (pd.crosstab(results['visual'], results['prediction'])
  .reindex(stormclasses)[stormclasses]
- .to_excel(pjoin(BASEDIR, 'events', 'crosstab.xlsx')))
+ .to_excel(pjoin(r"..\data\training", 'crosstab.xlsx')))
 
 allstnfile = r"X:\georisk\HaRIA_B_Wind\data\raw\from_bom\2022\1-minute\HD01D_StationDetails.txt"  # noqa
 
@@ -239,7 +239,7 @@ alldatadflist = []
 LOGGER.info("Loading all events with maximum gust > 60 km/h")
 for stn in allstndf.index:
     try:
-        df = loadData(stn, r"X:\georisk\HaRIA_B_Wind\data\derived\obs\1-minute\events-60")  # noqa
+        df = loadData(stn, r"..\data\allevents")
     except FileNotFoundError:
         pass  # print(f"No data for station: {stn}")
     else:
@@ -281,7 +281,10 @@ outputstormdf = pd.DataFrame(data={'stormType': stormclass},
 
 # Plot the storm counts
 LOGGER.info("Plotting results")
-outputstormdf.stormType.value_counts().plot(kind='bar')
+fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+outputstormdf.stormType.value_counts().plot(kind='bar', ax=ax)
+plt.text(1.0, -0.05, f"Created: {datetime.now():%Y-%m-%d %H:%M %z}",
+         transform=ax.transAxes, ha='right', va='top')
 plt.savefig(pjoin(OUTPUTPATH, "stormcounts.png"), bbox_inches='tight')
 
 # Write the value counts to file

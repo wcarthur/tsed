@@ -13,7 +13,7 @@ from cartopy import crs as ccrs
 import matplotlib.pyplot as plt
 import cartopy.feature as cfeature
 
-BASEDIR = r"X:\georisk\HaRIA_B_Wind\data\derived\obs\1-minute\events-60"
+BASEDIR = r"..\data\allevents"
 OUTPUTPATH = pjoin(BASEDIR, "results")
 df = pd.read_pickle(pjoin(OUTPUTPATH, "stormclass.pkl"))
 allstnfile = r"X:\georisk\HaRIA_B_Wind\data\raw\from_bom\2022\1-minute\HD01D_StationDetails.txt"  # noqa
@@ -63,7 +63,7 @@ propdf[stormclasses] = fulldf[stormclasses].div(fulldf['stormCount'], axis=0)
 propdf['Convective'] = fulldf['Convective'].div(fulldf['stormCount'], axis=0)
 propdf['Non-convective'] = fulldf['Non-convective'].div(fulldf['stormCount'],
                                                         axis=0)
-
+propdf.to_csv(pjoin(OUTPUTPATH, 'propstorms.csv'))
 gdf = gpd.GeoDataFrame(fulldf,
                        geometry=gpd.points_from_xy(fulldf.stnLon,
                                                    fulldf.stnLat),
@@ -74,7 +74,7 @@ propgdf = gpd.GeoDataFrame(propdf,
                                propdf.stnLon, propdf.stnLat
                                ),
                            crs='epsg:7844')
-# propgdf.to_file(pjoin(OUTPUTPATH, "propstorms.json"), driver="GeoJSON")
+#  propgdf.to_file(pjoin(OUTPUTPATH, "propstorms.json"), driver="GeoJSON")
 gax = plt.axes(projection=ccrs.PlateCarree())
 gax.figure.set_size_inches(15, 12)
 propgdf.plot(column='Convective', legend=True, scheme='quantiles',
