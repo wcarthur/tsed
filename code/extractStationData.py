@@ -43,6 +43,7 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 from prov.model import ProvDocument
+from prov.dot import prov_to_dot
 from metpy.calc import wind_components
 from metpy.units import units
 import matplotlib
@@ -118,7 +119,7 @@ def main(config, verbose=False):
     outputDir = config.get('Output', 'Path', fallback='')
     starttime = datetime.now().strftime(DATEFMT)
     commit, tag, dt, url = flGitRepository(sys.argv[0])
-    prov.agent(provlabel,
+    prov.agent(sys.argv[0],
                {"prov:type": "prov:SoftwareAgent",
                 "prov:Revision": commit,
                 "prov:tag": tag,
@@ -135,19 +136,22 @@ def main(config, verbose=False):
             },
                )
     prov.actedOnBehalfOf(provlabel, f":{getpass.getuser()}")
-    prov.wasInformedBy(provlabel, configent)
+    prov.wasInformedBy(sys.argv[0], configent)
+    prov.used(provlabel, sys.argv[0],)
 
     ListAllFiles(config)
-
     processStationFiles(config)
     processFiles(config)
 
     endtime = datetime.now().strftime(DATEFMT)
     prov.activity(provlabel, starttime, endtime,
                   {"dcterms:title": provtitle,
-                  "prov:type": "void:Extraction"}
+                   "prov:type": "void:Dataset"}
                 )
+
     prov.serialize(pjoin(outputDir, 'extraction.xml'), format='xml')
+    dot = prov_to_dot(prov)
+    dot.write_png(pjoin(outputDir, 'extraction_provenance.png'))
 
 
 def ListAllFiles(config):
@@ -190,7 +194,7 @@ def expandFileSpec(config, spec, category):
                            fallback=config.get('Defaults', 'OriginDir'))
     dirmtime = flPathTime(origindir)
     specent = prov.entity(f":{spec}",
-                          {"prov:type": "Collection",
+                          {"prov:type": "void:Dataset",
                            "prov:atLocation": origindir,
                            "prov:GeneratedAt": dirmtime})
     prov.used(provlabel, specent)
@@ -265,6 +269,24 @@ def processFiles(config):
     originDir = config.get(category, 'OriginDir',
                            fallback=defaultOriginDir)
     LOGGER.debug(f"Origin directory: {originDir}")
+
+    dmaxent = prov.entity(
+        ":DailyMaxOutput",
+        {"prov:type": "void:Dataset",
+         "dcterms:description": "Daily max wind speed and associated obs",
+         "prov:atLocation": pjoin(outputDir, 'dailymax'),
+         "prov:GeneratedAt": datetime.now().strftime(DATEFMT)}
+        )
+    dmeanent = prov.entity(
+        ":DailyMeanOutput",
+        {"prov:type": "void:Dataset",
+         "dcterms:description": "Daily mean weather obs",
+         "prov:atLocation": pjoin(outputDir, 'dailymax'),
+         "prov:GeneratedAt": datetime.now().strftime(DATEFMT)}
+        )
+
+    prov.wasGeneratedBy(dmaxent, provlabel)
+    prov.wasGeneratedBy(dmeanent, provlabel)
 
     for f in g_files[category]:
         LOGGER.info(f"Processing {f}")
