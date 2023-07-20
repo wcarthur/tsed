@@ -41,14 +41,10 @@ from datetime import datetime, timedelta
 from configparser import ConfigParser, ExtendedInterpolation
 import pandas as pd
 import numpy as np
-import seaborn as sns
 from prov.model import ProvDocument
-from prov.dot import prov_to_dot
 from metpy.calc import wind_components
 from metpy.units import units
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+
 import warnings
 
 from process import pAlreadyProcessed, pWriteProcessedFile, pArchiveFile, pInit
@@ -58,8 +54,7 @@ from stndata import ONEMINUTESTNNAMES, ONEMINUTEDTYPE, ONEMINUTENAMES
 
 warnings.simplefilter('ignore', RuntimeWarning)
 pd.set_option('mode.chained_assignment', None)
-sns.set_style('whitegrid')
-logging.getLogger('matplotlib').setLevel(logging.WARNING)
+
 
 LOGGER = logging.getLogger()
 PATTERN = re.compile(r".*Data_(\d{6}).*\.txt")
@@ -127,6 +122,9 @@ def main(config, verbose=False):
                 "prov:url": url})
     prov.agent(f":{getpass.getuser()}",
                {"prov:type": "foaf:Person"})
+    prov.agent("BureauOfMeteorology",
+               {"prov:type": "prov:Organization",
+                "foaf:mbox": "climatedata@bom.gov.au"})
     configent = prov.entity(
         ":configurationFile",
         {"dcterms:title": "Configuration file",
@@ -135,6 +133,8 @@ def main(config, verbose=False):
          "prov:atLocation": os.path.basename(config.configFile)
             },
                )
+    prov.collection("sourcedata")
+    prov.collection("stationdata")
     prov.actedOnBehalfOf(provlabel, f":{getpass.getuser()}")
     prov.wasInformedBy(sys.argv[0], configent)
     prov.used(provlabel, sys.argv[0],)
@@ -150,8 +150,6 @@ def main(config, verbose=False):
                 )
 
     prov.serialize(pjoin(outputDir, 'extraction.xml'), format='xml')
-    dot = prov_to_dot(prov)
-    dot.write_png(pjoin(outputDir, 'extraction_provenance.png'))
 
 
 def ListAllFiles(config):
@@ -193,18 +191,20 @@ def expandFileSpec(config, spec, category):
     origindir = config.get(category, 'OriginDir',
                            fallback=config.get('Defaults', 'OriginDir'))
     dirmtime = flPathTime(origindir)
-    specent = prov.entity(f":{spec}",
-                          {"prov:type": "void:Dataset",
+    specent = prov.collection(f":{spec}",
+                          {"prov:type": "prov:Collection",
                            "prov:atLocation": origindir,
                            "prov:GeneratedAt": dirmtime})
     prov.used(provlabel, specent)
-    spec = pjoin(origindir, spec)
-    files = glob.glob(spec)
+    specpath = pjoin(origindir, spec)
+    files = glob.glob(specpath)
     LOGGER.info(f"{len(files)} {spec} files to be processed")
     for file in files:
         if os.stat(file).st_size > 0:
             if file not in g_files[category]:
                 g_files[category].append(file)
+                prov.hadMember(f":{spec}",
+                               prov.entity(f":{os.path.basename(file)}"))
 
 
 def expandFileSpecs(config, specs, category):
@@ -237,6 +237,7 @@ def processStationFiles(config):
         LOGGER.info(f"Processing {f}")
         stnlist.append(getStationList(f))
     g_stations = pd.concat(stnlist)
+
 
 
 def processFiles(config):
@@ -284,10 +285,17 @@ def processFiles(config):
          "prov:atLocation": pjoin(outputDir, 'dailymax'),
          "prov:GeneratedAt": datetime.now().strftime(DATEFMT)}
         )
+    stormEventent = prov.entity(
+        ":stormEventData",
+        {"prov:type": "void:Dataset",
+         "dcterms:description": "Weather observations around daily max wind gust",
+         "prov:atLocation": pjoin(outputDir, 'events'),
+         "prov:GeneratedAt": datetime.now().strftime(DATEFMT)}
+    )
 
     prov.wasGeneratedBy(dmaxent, provlabel)
     prov.wasGeneratedBy(dmeanent, provlabel)
-
+    prov.wasGeneratedBy(stormEventent, provlabel)
     for f in g_files[category]:
         LOGGER.info(f"Processing {f}")
         directory, fname, md5sum, moddate = flGetStat(f)
@@ -314,8 +322,13 @@ def processFile(filename: str, config) -> bool:
 
     global g_stations
     outputFormat = config.get('Output', 'Format', fallback='pickle')
+    prov.entity(":DailyMaxOutput").add_attributes({"format": outputFormat})
+    prov.entity(":DailyMeanOutput").add_attributes({"format": outputFormat})
+    prov.entity(":stormEventData").add_attributes({"format": outputFormat})
+
     outputDir = config.get('Output', 'Path')
     threshold = config.getfloat('Input', 'Threshold')
+    prov.entity(":stormEventData").add_attributes({"threshold": threshold})
     ext = "pkl" if outputFormat=='pickle' else 'csv'
     outfunc = "to_pickle" if outputFormat=='pickle' else 'to_csv'
     LOGGER.info(f"Loading data from {filename}")

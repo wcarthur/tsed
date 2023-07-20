@@ -62,25 +62,23 @@ def start():
                           interpolation=ExtendedInterpolation())
     config.optionxform = str
     config.read(configFile)
-
-    pInit(configFile)
-    main(config, verbose)
-
-
-def main(config, verbose=False):
-    """
-    Start logger and call the loop to process source files.
-
-    :param config: `ConfigParser` object with configuration loaded
-    :param boolean verbose: If `True`, print logging messages to STDOUT
-
-    """
-
     logfile = config.get('Logging', 'LogFile')
     loglevel = config.get('Logging', 'LogLevel', fallback='INFO')
     verbose = config.getboolean('Logging', 'Verbose', fallback=verbose)
     datestamp = config.getboolean('Logging', 'Datestamp', fallback=False)
     LOGGER = flStartLog(logfile, loglevel, verbose, datestamp)
+
+    pInit(configFile)
+    main(config)
+
+
+def main(config):
+    """
+    Start logger and call the loop to process source files.
+
+    :param config: `ConfigParser` object with configuration loaded
+
+    """
 
     ListAllFiles(config)
     processStationFiles(config)
