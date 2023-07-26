@@ -29,4 +29,4 @@ jobs:
         path: pylint.txt
     - name: Run pytest
       run: |
-        pytest -v --cov=. --cov-report xml
+        pytest -x --cov=. --cov-report xml
