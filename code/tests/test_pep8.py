@@ -33,7 +33,8 @@ class TestCodeFormat(unittest.TestCase):
         path = pathlib.Path(root)
         result = pep8style.check_files([path.parent.as_posix()])
         self.assertEqual(result.total_errors, 0,
-                         "Found code syntax errors (and warnings).")
+                         (f"Found {result.total_errors} "
+                          "code syntax errors (and warnings)."))
 
 
 if __name__ == '__main__':
