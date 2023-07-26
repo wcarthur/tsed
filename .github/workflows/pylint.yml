@@ -22,7 +22,7 @@ jobs:
       run: |
         pylint $(git ls-files '*.py') | tee pylint.txt
     - name: Upload pylint.txt as artifact
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: pylint report
         path: pylint.txt
