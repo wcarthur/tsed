@@ -4,7 +4,8 @@ Plot all events classified as spike events for quality control checking
 """
 from os.path import join as pjoin
 import pandas as pd
-import matplotlib; matplotlib.use("Agg")
+import matplotlib
+matplotlib.use("Agg")  # noqa E402
 import matplotlib.pyplot as plt
 from matplotlib import patheffects
 from datetime import datetime
@@ -16,6 +17,7 @@ from files import flStartLog
 LOGGER = flStartLog(r"..\output\plotSpikeEvents.log", "INFO", verbose=True)
 OUTPUTPATH = pjoin(r"..\data\allevents", "results")
 PLOTPATH = pjoin(r"..\data\allevents", "plots")
+
 
 def loadData(stnNum: int, datapath: str) -> pd.DataFrame:
     """
@@ -40,16 +42,17 @@ def loadData(stnNum: int, datapath: str) -> pd.DataFrame:
             'dpanom', 'windspd', 'uanom', 'vanom']
 
     # Temporarily switch off the interpolation and backfill
-    #for var in vars:
-    #    df[var] = (df[var]
-    #               .interpolate(method='linear')
-    #               .fillna(method='bfill')
-    #               )
+    # for var in vars:
+    #     df[var] = (df[var]
+    #                .interpolate(method='linear')
+    #                .fillna(method='bfill')
+    #                )
 
     df['stnNum'] = stnNum
     df.reset_index(inplace=True)
     df.set_index(['stnNum', 'date'], inplace=True)
     return df
+
 
 def plotEvent(df: pd.DataFrame, stormType: str, stnNum: int, dtstr: str):
     """
@@ -81,7 +84,7 @@ def plotEvent(df: pd.DataFrame, stormType: str, stnNum: int, dtstr: str):
     lnw = ax.plot(df.tdiff, df.windgust, label="Gust wind speed [km/h]",
                   marker='o', lw=1, markerfacecolor="None", zorder=100)
     lnwd = axd.scatter(df.tdiff, df.winddir, color='g', marker='o',
-                      label="Wind direction")
+                       label="Wind direction")
 
     axt.spines[['right']].set_color('r')
     axt.yaxis.label.set_color('r')
@@ -122,7 +125,8 @@ def plotEvent(df: pd.DataFrame, stormType: str, stnNum: int, dtstr: str):
     ax.legend(lns, labs)
     plt.text(1.0, -0.05, f"Created: {datetime.now():%Y-%m-%d %H:%M %z}",
              transform=ax.transAxes, ha='right', va='top')
-    plt.savefig(pjoin(PLOTPATH, f"{stormType}.{stnNum}.{dtstr}.png"), bbox_inches='tight')
+    plt.savefig(pjoin(PLOTPATH, f"{stormType}.{stnNum}.{dtstr}.png"),
+                bbox_inches='tight')
     plt.close(fig)
 
 
@@ -153,7 +157,7 @@ alldatadf['idx'] = alldatadf.index
 stormClassFile = pjoin(OUTPUTPATH, 'stormclass.pkl')
 stormclassdf = pd.read_pickle(stormClassFile)
 
-spikeEvents = stormclassdf[stormclassdf.stormType=='Spike']
+spikeEvents = stormclassdf[stormclassdf.stormType == 'Spike']
 spidx = spikeEvents.index
 
 spikeData = alldatadf[alldatadf['idx'].isin(spidx)]

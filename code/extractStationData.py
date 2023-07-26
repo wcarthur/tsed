@@ -43,7 +43,7 @@ from prov.model import ProvDocument
 from metpy.calc import wind_components
 from metpy.units import units
 import matplotlib
-matplotlib.use("Agg")
+matplotlib.use("Agg")  # noqa E402
 import matplotlib.pyplot as plt
 import warnings
 
@@ -73,6 +73,7 @@ prov.add_namespace('void', 'http://vocab.deri.ie/void#')
 prov.add_namespace('dcterms', 'http://purl.org/dc/terms/')
 provlabel = ":stormDataExtraction"
 provtitle = "Storm data extraction"
+
 
 def start():
     """
@@ -241,13 +242,12 @@ def processFile(filename: str, config) -> bool:
     :param config:  `ConfigParser` object
     """
 
-
     global g_stations
     outputFormat = config.get('Output', 'Format', fallback='pickle')
     outputDir = config.get('Output', 'Path')
     threshold = config.getfloat('Input', 'Threshold')
-    ext = "pkl" if outputFormat=='pickle' else 'csv'
-    outfunc = "to_pickle" if outputFormat=='pickle' else 'to_csv'
+    ext = "pkl" if outputFormat == 'pickle' else 'csv'
+    outfunc = "to_pickle" if outputFormat == 'pickle' else 'to_csv'
     LOGGER.info(f"Loading data from {filename}")
     LOGGER.debug(f"Data will be written to {outputDir}")
     LOGGER.debug(f"Using {outputFormat} for output data")

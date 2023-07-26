@@ -214,7 +214,7 @@ LOGGER.info("Running classifier for all visually-classified events")
 rocket = RocketClassifier(num_kernels=10000)
 rocket.fit(fulltrainarray, fully)
 newclass = rocket.predict(fulltrainarray)
-results = pd.DataFrame(data={'prediction':newclass, 'visual':fully})
+results = pd.DataFrame(data={'prediction': newclass, 'visual': fully})
 score = rocket.score(fulltrainarray, fully)
 LOGGER.info(f"Accuracy of the classifier: {score}")
 stormclasses = ['Synoptic storm', 'Synoptic front', 'Storm-burst',

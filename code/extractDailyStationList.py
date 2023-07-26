@@ -11,7 +11,7 @@ import cartopy.feature as cfeature
 
 dataPath = "X:/georisk/HaRIA_B_Wind/data/raw/from_bom/2019/Daily"
 tempPath = "C:/WorkSpace/temp"
-pattern = re.compile(".*StnDet.*\.txt")
+pattern = re.compile(".*StnDet.*\.txt")  # noqa W605
 
 filelist = os.listdir(dataPath)
 for f in filelist:
@@ -34,9 +34,9 @@ climatoldfnames = ["Filename", "Longitude", "Latitude", "Elevation",
                    "StationNumber", "StationName"]
 
 print(f"Loading data from {f}")
-df = pd.read_csv(pjoin(dataPath,stnfile), sep=',', index_col=False,
+df = pd.read_csv(pjoin(dataPath, stnfile), sep=',', index_col=False,
                  names=colnames, header=0, keep_default_na=False)
-outdf = pd.DataFrame(columns = df.columns)
+outdf = pd.DataFrame(columns=df.columns)
 climatoldf = pd.DataFrame(columns=["Filename", "Longitude", "Latitude",
                                    "Elevation", "StationNumber",
                                    "StationName"])
@@ -53,14 +53,14 @@ for idx, row in df.iterrows():
             pd.DataFrame([[pjoin(dataPath, filename),
                            row.stnLon, row.stnLat, row.stnElev,
                            row.stnNum, row.stnName]],
-                           columns=climatoldfnames), ignore_index=True)
+                         columns=climatoldfnames), ignore_index=True)
     else:
         print(f"Insufficient data for station {row.stnNum}")
 
 climatoldf.to_csv(pjoin(tempPath, "stations.txt"), index=False)
 gdf = gpd.GeoDataFrame(outdf,
                        geometry=gpd.points_from_xy(
-                           outdf.stnLon,outdf.stnLat, crs="EPSG:7844"))
+                           outdf.stnLon, outdf.stnLat, crs="EPSG:7844"))
 gdf.to_file(pjoin(tempPath, "daily-stationlist.shp"))
 gdf.to_file(pjoin(tempPath, "daily-stationlist.json"), driver='GeoJSON')
 gdf.drop(columns=['geometry']).to_csv(
@@ -73,7 +73,7 @@ states = cfeature.NaturalEarthFeature(
         facecolor='none')
 
 ax = plt.axes(projection=ccrs.PlateCarree())
-ax.figure.set_size_inches(15,10)
+ax.figure.set_size_inches(15, 10)
 gdf.plot(ax=ax, marker='o', color='red', markersize=15, alpha=0.75,
          edgecolor='white', zorder=1)
 ax.coastlines(resolution='10m')
