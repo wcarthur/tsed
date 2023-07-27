@@ -19,12 +19,14 @@ option set to `False`.
 Processed files can be archived once processed. Set the `ArchiveWhenProcessed`
 option to `True` and define `ArchiveDir` as a writable path.
 
+Station data details are written to a GeoJSON file that can be used to create a feature class in ArcGIS Pro. We use GeoJSON as it retains the fully qualified field names for all fields - saving to Esri shape file will truncate field names.
+
+A PROV (provenance) file is written to the output folder, setting out the vaious entities created, sources, and the associations between them. See https://www.w3.org/TR/prov-primer/ for more details.
+
 
 To run:
 
 python extractStationData.py -c extract_allevents.ini
-
-
 
 """
 
@@ -40,6 +42,7 @@ from os.path import join as pjoin
 from datetime import datetime, timedelta
 from configparser import ConfigParser, ExtendedInterpolation
 import pandas as pd
+import geopandas as gpd
 import numpy as np
 from prov.model import ProvDocument
 from metpy.calc import wind_components
@@ -48,7 +51,8 @@ from metpy.units import units
 import warnings
 
 from process import pAlreadyProcessed, pWriteProcessedFile, pArchiveFile, pInit
-from files import flStartLog, flGetStat, flSize, flGitRepository, flPathTime
+from files import flStartLog, flGetStat, flSize, flGitRepository
+from files import flModDate, flPathTime
 from stndata import ONEMINUTESTNNAMES, ONEMINUTEDTYPE, ONEMINUTENAMES
 
 
@@ -114,29 +118,32 @@ def main(config, verbose=False):
     outputDir = config.get('Output', 'Path', fallback='')
     starttime = datetime.now().strftime(DATEFMT)
     commit, tag, dt, url = flGitRepository(sys.argv[0])
+
     prov.agent(sys.argv[0],
-               {"prov:type": "prov:SoftwareAgent",
+               {"dcterms:type": "prov:SoftwareAgent",
                 "prov:Revision": commit,
                 "prov:tag": tag,
-                "prov:date": dt,
+                "dcterms:date": dt,
                 "prov:url": url})
+
     prov.agent(f":{getpass.getuser()}",
-               {"prov:type": "foaf:Person"})
+               {"dcterms:type": "foaf:Person"})
+
     prov.agent("BureauOfMeteorology",
-               {"prov:type": "prov:Organization",
+               {"dcterms:type": "prov:Organization",
                 "foaf:mbox": "climatedata@bom.gov.au"})
+
     configent = prov.entity(
         ":configurationFile",
         {"dcterms:title": "Configuration file",
-         "prov:type": 'foaf:Document',
-         "prov:format": "Text file",
+         "dcterms:type": 'foaf:Document',
+         "dcterms:format": "Text file",
          "prov:atLocation": os.path.basename(config.configFile)
             },
                )
-    prov.collection("sourcedata")
-    prov.collection("stationdata")
+
     prov.actedOnBehalfOf(provlabel, f":{getpass.getuser()}")
-    prov.wasInformedBy(sys.argv[0], configent)
+    prov.used(sys.argv[0], configent)
     prov.used(provlabel, sys.argv[0],)
 
     ListAllFiles(config)
@@ -146,10 +153,13 @@ def main(config, verbose=False):
     endtime = datetime.now().strftime(DATEFMT)
     prov.activity(provlabel, starttime, endtime,
                   {"dcterms:title": provtitle,
-                   "prov:type": "void:Dataset"}
+                   "dcterms:type": "void:Dataset"}
                 )
-
     prov.serialize(pjoin(outputDir, 'extraction.xml'), format='xml')
+
+    for key in g_files.keys():
+        LOGGER.info(f"Processed {len(g_files[key])} {key} files")
+    LOGGER.info("Completed")
 
 
 def ListAllFiles(config):
@@ -192,19 +202,27 @@ def expandFileSpec(config, spec, category):
                            fallback=config.get('Defaults', 'OriginDir'))
     dirmtime = flPathTime(origindir)
     specent = prov.collection(f":{spec}",
-                          {"prov:type": "prov:Collection",
+                          {"dcterms:type": "prov:Collection",
+                           "dcterms:title": category,
                            "prov:atLocation": origindir,
                            "prov:GeneratedAt": dirmtime})
     prov.used(provlabel, specent)
     specpath = pjoin(origindir, spec)
     files = glob.glob(specpath)
+    entities = []
     LOGGER.info(f"{len(files)} {spec} files to be processed")
     for file in files:
         if os.stat(file).st_size > 0:
             if file not in g_files[category]:
                 g_files[category].append(file)
-                prov.hadMember(f":{spec}",
-                               prov.entity(f":{os.path.basename(file)}"))
+                entities.append(
+                    prov.entity(
+                        f":{os.path.basename(file)}",
+                        {"prov:atLocation": origindir,
+                         "dcterms:created": flModDate(file)})
+                )
+    for entity in entities:
+        prov.hadMember(specent, entity)
 
 
 def expandFileSpecs(config, specs, category):
@@ -230,14 +248,40 @@ def processStationFiles(config):
     global g_files
     global g_stations
     global LOGGER
-
+    unknownDir = config.get('Defaults', 'UnknownDir')
+    outputDir = config.get('Output', 'Path', fallback=unknownDir)
     stnlist = []
-    category = 'Stations'
+    category = 'StationFiles'
+
     for f in g_files[category]:
         LOGGER.info(f"Processing {f}")
         stnlist.append(getStationList(f))
     g_stations = pd.concat(stnlist)
 
+    # Create a GeoDataFrame for the station data:
+    gdf_stations = gpd.GeoDataFrame(
+        data=g_stations,
+        geometry=gpd.points_from_xy(
+            g_stations.stnLon,
+            g_stations.stnLat
+        ))
+
+    gdf_stations.set_crs(epsg=7844, inplace=True)
+    gdf_stations.to_file(
+        pjoin(outputDir, "tsedstations.geojson"),
+        driver="GeoJSON")
+
+    # Provenance:
+    stnlistent = prov.entity(
+        ":StationList",
+        {"dcterms:type": "void:dataset",
+         "dcterms:description": "Station information",
+         "prov:atLocation": pjoin(outputDir,"tsedstations.geojson"),
+         "prov:GeneratedAt": datetime.now().strftime(DATEFMT),
+         "dcterms:format": "GeoJSON"
+         })
+    prov.wasGeneratedBy(stnlistent, provlabel,
+                        time=datetime.now().strftime(DATEFMT))
 
 
 def processFiles(config):
@@ -266,36 +310,11 @@ def processFiles(config):
         os.mkdir(pjoin(outputDir, 'events'))
         os.mkdir(pjoin(outputDir, 'results'))
 
-    category = "Input"
+    category = "ObservationFiles"
     originDir = config.get(category, 'OriginDir',
                            fallback=defaultOriginDir)
     LOGGER.debug(f"Origin directory: {originDir}")
 
-    dmaxent = prov.entity(
-        ":DailyMaxOutput",
-        {"prov:type": "void:Dataset",
-         "dcterms:description": "Daily max wind speed and associated obs",
-         "prov:atLocation": pjoin(outputDir, 'dailymax'),
-         "prov:GeneratedAt": datetime.now().strftime(DATEFMT)}
-        )
-    dmeanent = prov.entity(
-        ":DailyMeanOutput",
-        {"prov:type": "void:Dataset",
-         "dcterms:description": "Daily mean weather obs",
-         "prov:atLocation": pjoin(outputDir, 'dailymax'),
-         "prov:GeneratedAt": datetime.now().strftime(DATEFMT)}
-        )
-    stormEventent = prov.entity(
-        ":stormEventData",
-        {"prov:type": "void:Dataset",
-         "dcterms:description": "Weather observations around daily max wind gust",
-         "prov:atLocation": pjoin(outputDir, 'events'),
-         "prov:GeneratedAt": datetime.now().strftime(DATEFMT)}
-    )
-
-    prov.wasGeneratedBy(dmaxent, provlabel)
-    prov.wasGeneratedBy(dmeanent, provlabel)
-    prov.wasGeneratedBy(stormEventent, provlabel)
     for f in g_files[category]:
         LOGGER.info(f"Processing {f}")
         directory, fname, md5sum, moddate = flGetStat(f)
@@ -309,6 +328,33 @@ def processFiles(config):
                     pArchiveFile(f)
                 elif deleteWhenProcessed:
                     os.unlink(f)
+
+    dmaxent = prov.entity(
+        ":DailyMaxOutput",
+        {"dcterms:type": "void:Dataset",
+         "dcterms:description": "Daily max wind speed and associated obs",
+         "prov:atLocation": pjoin(outputDir, 'dailymax'),
+         "prov:GeneratedAt": datetime.now().strftime(DATEFMT)}
+        )
+    dmeanent = prov.entity(
+        ":DailyMeanOutput",
+        {"dcterms:type": "void:Dataset",
+         "dcterms:description": "Daily mean weather obs",
+         "prov:atLocation": pjoin(outputDir, 'dailymax'),
+         "prov:GeneratedAt": datetime.now().strftime(DATEFMT)}
+        )
+    stormEventent = prov.entity(
+        ":stormEventData",
+        {"dcterms:type": "void:Dataset",
+         "dcterms:description": "Weather observations around daily max wind gust",
+         "prov:atLocation": pjoin(outputDir, 'events'),
+         "prov:GeneratedAt": datetime.now().strftime(DATEFMT)}
+    )
+
+    prov.wasGeneratedBy(dmaxent, provlabel)
+    prov.wasGeneratedBy(dmeanent, provlabel)
+    prov.wasGeneratedBy(stormEventent, provlabel)
+
 
 
 def processFile(filename: str, config) -> bool:
@@ -362,7 +408,13 @@ def processFile(filename: str, config) -> bool:
                 LOGGER.debug(f"Writing data to {pjoin(outputDir, 'events', basename)}")  # noqa: E501
                 getattr(eventdf, outfunc)(pjoin(outputDir, 'events', basename))
                 eventdf.to_pickle(pjoin(outputDir, 'events', basename))
-                e1 = prov.entity(filename)
+                e1 = prov.entity(
+                    filename,
+                    {"dcterms:type": "void:dataset",
+                     "dcterms:description": "Gust event information",
+                     "prov:atLocation": pjoin(outputDir, 'events', basename),
+                     "prov:GeneratedAt": datetime.now().strftime(DATEFMT),
+                     "dcterms:format": outputFormat})
                 prov.wasDerivedFrom(provlabel, e1)
         rc = True
     return rc
@@ -428,7 +480,7 @@ def extractDailyMax(filename, stnState, stnName, stnNum,
                          dtype=ONEMINUTEDTYPE,
                          names=ONEMINUTENAMES,
                          header=0,
-                         parse_dates={'datetime': [7, 8, 9, 10, 11]},
+                         parse_dates={'datetimeLST': [7, 8, 9, 10, 11]},
                          na_values=['####'],
                          skipinitialspace=True)
     except Exception as err:
@@ -440,12 +492,15 @@ def extractDailyMax(filename, stnState, stnName, stnNum,
                 'winddir', 'windsd', 'windgust', 'mslp', 'stnp']:
         df.loc[~df[f"{var}q"].isin(['Y']), [var]] = np.nan
 
-    # Hacky way to convert from local standard time to UTC:
-    df['datetime'] = pd.to_datetime(df.datetime, format="%Y %m %d %H %M")
+    # Hacky way to convert from local standard time (LST) to UTC:
+    df['datetimeLST'] = pd.to_datetime(df.datetimeLST, format="%Y %m %d %H %M")
     LOGGER.debug("Converting from local to UTC time")
-    df['datetime'] = df.datetime - timedelta(hours=TZ[stnState])
+    df['datetime'] = df.datetimeLST - timedelta(hours=TZ[stnState])
     df['date'] = df.datetime.dt.date
+    # First have to set the datetime as index, then localize to UTC:
     df.set_index('datetime', inplace=True)
+    df.set_index(df.index.tz_localize(tz="UTC"), inplace=True)
+
     LOGGER.debug("Determining daily maximum wind speed record")
     dfmax = df.loc[df.groupby(['date'])[variable].idxmax().dropna()]
 
