@@ -56,28 +56,36 @@ from files import flModDate, flPathTime
 from stndata import ONEMINUTESTNNAMES, ONEMINUTEDTYPE, ONEMINUTENAMES
 
 
-warnings.simplefilter('ignore', RuntimeWarning)
-pd.set_option('mode.chained_assignment', None)
+warnings.simplefilter("ignore", RuntimeWarning)
+pd.set_option("mode.chained_assignment", None)
 
 
 LOGGER = logging.getLogger()
 PATTERN = re.compile(r".*Data_(\d{6}).*\.txt")
 STNFILE = re.compile(r".*StnDet.*\.txt")
-TZ = {"QLD": 10, "NSW": 10, "VIC": 10,
-      "TAS": 10, "SA": 9.5, "NT": 9.5,
-      "WA": 8, "ANT": 0}
+TZ = {
+    "QLD": 10,
+    "NSW": 10,
+    "VIC": 10,
+    "TAS": 10,
+    "SA": 9.5,
+    "NT": 9.5,
+    "WA": 8,
+    "ANT": 0,
+}
 
 DATEFMT = "%Y-%m-%d %H:%M:%S"
 
 prov = ProvDocument()
 prov.set_default_namespace("")
-prov.add_namespace('prov', 'http://www.w3.org/ns/prov#')
-prov.add_namespace('xsd', 'http://www.w3.org/2001/XMLSchema#')
-prov.add_namespace('foaf', 'http://xmlns.com/foaf/0.1/')
-prov.add_namespace('void', 'http://vocab.deri.ie/void#')
-prov.add_namespace('dcterms', 'http://purl.org/dc/terms/')
+prov.add_namespace("prov", "http://www.w3.org/ns/prov#")
+prov.add_namespace("xsd", "http://www.w3.org/2001/XMLSchema#")
+prov.add_namespace("foaf", "http://xmlns.com/foaf/0.1/")
+prov.add_namespace("void", "http://vocab.deri.ie/void#")
+prov.add_namespace("dcterms", "http://purl.org/dc/terms/")
 provlabel = ":stormDataExtraction"
 provtitle = "Storm data extraction"
+
 
 def start():
     """
@@ -85,15 +93,13 @@ def start():
     processed files) and start the main loop.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--config_file', help="Configuration file")
-    parser.add_argument('-v', '--verbose', help="Verbose output",
-                        action='store_true')
+    parser.add_argument("-c", "--config_file", help="Configuration file")
+    parser.add_argument("-v", "--verbose", help="Verbose output", action="store_true")
     args = parser.parse_args()
 
     configFile = args.config_file
     verbose = args.verbose
-    config = ConfigParser(allow_no_value=True,
-                          interpolation=ExtendedInterpolation())
+    config = ConfigParser(allow_no_value=True, interpolation=ExtendedInterpolation())
     config.optionxform = str
     config.read(configFile)
     config.configFile = configFile
@@ -110,52 +116,70 @@ def main(config, verbose=False):
     :param boolean verbose: If `True`, print logging messages to STDOUT
 
     """
-    logfile = config.get('Logging', 'LogFile')
-    loglevel = config.get('Logging', 'LogLevel', fallback='INFO')
-    verbose = config.getboolean('Logging', 'Verbose', fallback=verbose)
-    datestamp = config.getboolean('Logging', 'Datestamp', fallback=False)
+    logfile = config.get("Logging", "LogFile")
+    loglevel = config.get("Logging", "LogLevel", fallback="INFO")
+    verbose = config.getboolean("Logging", "Verbose", fallback=verbose)
+    datestamp = config.getboolean("Logging", "Datestamp", fallback=False)
     LOGGER = flStartLog(logfile, loglevel, verbose, datestamp)
-    outputDir = config.get('Output', 'Path', fallback='')
+    outputDir = config.get("Output", "Path", fallback="")
     starttime = datetime.now().strftime(DATEFMT)
     commit, tag, dt, url = flGitRepository(sys.argv[0])
 
-    prov.agent(sys.argv[0],
-               {"dcterms:type": "prov:SoftwareAgent",
-                "prov:Revision": commit,
-                "prov:tag": tag,
-                "dcterms:date": dt,
-                "prov:url": url})
+    prov.agent(
+        sys.argv[0],
+        {
+            "dcterms:type": "prov:SoftwareAgent",
+            "prov:Revision": commit,
+            "prov:tag": tag,
+            "dcterms:date": dt,
+            "prov:url": url,
+        },
+    )
 
-    prov.agent(f":{getpass.getuser()}",
-               {"dcterms:type": "foaf:Person"})
+    # We use the current user as the primary agent:
+    prov.agent(f":{getpass.getuser()}", {"prov:type": "prov:Person"})
 
-    prov.agent("BureauOfMeteorology",
-               {"dcterms:type": "prov:Organization",
-                "foaf:mbox": "climatedata@bom.gov.au"})
+    prov.agent(
+        "GeoscienceAustralia",
+        {"prov:type": "prov:Organisation", "foaf:name": "Geoscience Australia"},
+    )
+
+    prov.agent(
+        "BureauOfMeteorology",
+        {
+            "prov:type": "prov:Organization",
+            "foaf:name": "Bureau of Meteorology Climate Data Services",
+            "foaf:mbox": "climatedata@bom.gov.au",
+        },
+    )
 
     configent = prov.entity(
         ":configurationFile",
-        {"dcterms:title": "Configuration file",
-         "dcterms:type": 'foaf:Document',
-         "dcterms:format": "Text file",
-         "prov:atLocation": os.path.basename(config.configFile)
-            },
-               )
+        {
+            "dcterms:title": "Configuration file",
+            "dcterms:type": "foaf:Document",
+            "dcterms:format": "Text file",
+            "prov:atLocation": os.path.basename(config.configFile),
+        },
+    )
 
     prov.actedOnBehalfOf(provlabel, f":{getpass.getuser()}")
+    prov.actedOnBehalfOf(f":{getpass.getuser()}", "GeoscienceAustralia")
     prov.used(sys.argv[0], configent)
-    prov.used(provlabel, sys.argv[0],)
+    prov.used(provlabel, sys.argv[0])
 
     ListAllFiles(config)
     processStationFiles(config)
     processFiles(config)
 
     endtime = datetime.now().strftime(DATEFMT)
-    prov.activity(provlabel, starttime, endtime,
-                  {"dcterms:title": provtitle,
-                   "dcterms:type": "void:Dataset"}
-                )
-    prov.serialize(pjoin(outputDir, 'extraction.xml'), format='xml')
+    prov.activity(
+        provlabel,
+        starttime,
+        endtime,
+        {"dcterms:title": provtitle, "dcterms:type": "void:Dataset"},
+    )
+    prov.serialize(pjoin(outputDir, "extraction.xml"), format="xml")
 
     for key in g_files.keys():
         LOGGER.info(f"Processed {len(g_files[key])} {key} files")
@@ -171,12 +195,12 @@ def ListAllFiles(config):
     """
     global g_files
     g_files = {}
-    categories = config.items('Categories')
+    categories = config.items("Categories")
     for idx, category in categories:
         specs = []
         items = config.items(category)
         for k, v in items:
-            if v == '':
+            if v == "":
                 specs.append(k)
         expandFileSpecs(config, specs, category)
 
@@ -198,15 +222,21 @@ def expandFileSpec(config, spec, category):
     if category not in g_files:
         g_files[category] = []
 
-    origindir = config.get(category, 'OriginDir',
-                           fallback=config.get('Defaults', 'OriginDir'))
+    origindir = config.get(
+        category, "OriginDir", fallback=config.get("Defaults", "OriginDir")
+    )
     dirmtime = flPathTime(origindir)
-    specent = prov.collection(f":{spec}",
-                          {"dcterms:type": "prov:Collection",
-                           "dcterms:title": category,
-                           "prov:atLocation": origindir,
-                           "prov:GeneratedAt": dirmtime})
+    specent = prov.collection(
+        f":{spec}",
+        {
+            "dcterms:type": "prov:Collection",
+            "dcterms:title": category,
+            "prov:atLocation": origindir,
+            "prov:GeneratedAt": dirmtime,
+        },
+    )
     prov.used(provlabel, specent)
+    prov.wasAttributedTo(specent, "BureauOfMeteorology")
     specpath = pjoin(origindir, spec)
     files = glob.glob(specpath)
     entities = []
@@ -218,8 +248,11 @@ def expandFileSpec(config, spec, category):
                 entities.append(
                     prov.entity(
                         f":{os.path.basename(file)}",
-                        {"prov:atLocation": origindir,
-                         "dcterms:created": flModDate(file)})
+                        {
+                            "prov:atLocation": origindir,
+                            "dcterms:created": flModDate(file),
+                        },
+                    )
                 )
     for entity in entities:
         prov.hadMember(specent, entity)
@@ -248,10 +281,10 @@ def processStationFiles(config):
     global g_files
     global g_stations
     global LOGGER
-    unknownDir = config.get('Defaults', 'UnknownDir')
-    outputDir = config.get('Output', 'Path', fallback=unknownDir)
+    unknownDir = config.get("Defaults", "UnknownDir")
+    outputDir = config.get("Output", "Path", fallback=unknownDir)
     stnlist = []
-    category = 'StationFiles'
+    category = "StationFiles"
 
     for f in g_files[category]:
         LOGGER.info(f"Processing {f}")
@@ -261,27 +294,24 @@ def processStationFiles(config):
     # Create a GeoDataFrame for the station data:
     gdf_stations = gpd.GeoDataFrame(
         data=g_stations,
-        geometry=gpd.points_from_xy(
-            g_stations.stnLon,
-            g_stations.stnLat
-        ))
+        geometry=gpd.points_from_xy(g_stations.stnLon, g_stations.stnLat),
+    )
 
     gdf_stations.set_crs(epsg=7844, inplace=True)
-    gdf_stations.to_file(
-        pjoin(outputDir, "tsedstations.geojson"),
-        driver="GeoJSON")
+    gdf_stations.to_file(pjoin(outputDir, "tsedstations.geojson"), driver="GeoJSON")
 
     # Provenance:
     stnlistent = prov.entity(
         ":StationList",
-        {"dcterms:type": "void:dataset",
-         "dcterms:description": "Station information",
-         "prov:atLocation": pjoin(outputDir,"tsedstations.geojson"),
-         "prov:GeneratedAt": datetime.now().strftime(DATEFMT),
-         "dcterms:format": "GeoJSON"
-         })
-    prov.wasGeneratedBy(stnlistent, provlabel,
-                        time=datetime.now().strftime(DATEFMT))
+        {
+            "dcterms:type": "void:dataset",
+            "dcterms:description": "Station information",
+            "prov:atLocation": pjoin(outputDir, "tsedstations.geojson"),
+            "prov:GeneratedAt": datetime.now().strftime(DATEFMT),
+            "dcterms:format": "GeoJSON",
+        },
+    )
+    prov.wasGeneratedBy(stnlistent, provlabel, time=datetime.now().strftime(DATEFMT))
 
 
 def processFiles(config):
@@ -290,13 +320,15 @@ def processFiles(config):
     """
     global g_files
     global LOGGER
-    unknownDir = config.get('Defaults', 'UnknownDir')
-    defaultOriginDir = config.get('Defaults', 'OriginDir')
+    unknownDir = config.get("Defaults", "UnknownDir")
+    defaultOriginDir = config.get("Defaults", "OriginDir")
     deleteWhenProcessed = config.getboolean(
-        'Files', 'DeleteWhenProcessed', fallback=False)
+        "Files", "DeleteWhenProcessed", fallback=False
+    )
     archiveWhenProcessed = config.getboolean(
-        'Files', 'ArchiveWhenProcessed', fallback=True)
-    outputDir = config.get('Output', 'Path', fallback=unknownDir)
+        "Files", "ArchiveWhenProcessed", fallback=True
+    )
+    outputDir = config.get("Output", "Path", fallback=unknownDir)
     LOGGER.debug(f"DeleteWhenProcessed: {deleteWhenProcessed}")
     LOGGER.debug(f"Output directory: {outputDir}")
     if not os.path.exists(unknownDir):
@@ -304,15 +336,14 @@ def processFiles(config):
 
     if not os.path.exists(outputDir):
         os.mkdir(outputDir)
-        os.mkdir(pjoin(outputDir, 'dailymax'))
-        os.mkdir(pjoin(outputDir, 'dailymean'))
-        os.mkdir(pjoin(outputDir, 'plots'))
-        os.mkdir(pjoin(outputDir, 'events'))
-        os.mkdir(pjoin(outputDir, 'results'))
+        os.mkdir(pjoin(outputDir, "dailymax"))
+        os.mkdir(pjoin(outputDir, "dailymean"))
+        os.mkdir(pjoin(outputDir, "plots"))
+        os.mkdir(pjoin(outputDir, "events"))
+        os.mkdir(pjoin(outputDir, "results"))
 
     category = "ObservationFiles"
-    originDir = config.get(category, 'OriginDir',
-                           fallback=defaultOriginDir)
+    originDir = config.get(category, "OriginDir", fallback=defaultOriginDir)
     LOGGER.debug(f"Origin directory: {originDir}")
 
     for f in g_files[category]:
@@ -331,30 +362,35 @@ def processFiles(config):
 
     dmaxent = prov.entity(
         ":DailyMaxOutput",
-        {"dcterms:type": "void:Dataset",
-         "dcterms:description": "Daily max wind speed and associated obs",
-         "prov:atLocation": pjoin(outputDir, 'dailymax'),
-         "prov:GeneratedAt": datetime.now().strftime(DATEFMT)}
-        )
+        {
+            "dcterms:type": "void:Dataset",
+            "dcterms:description": "Daily max wind speed and associated obs",
+            "prov:atLocation": pjoin(outputDir, "dailymax"),
+            "prov:GeneratedAt": datetime.now().strftime(DATEFMT),
+        },
+    )
     dmeanent = prov.entity(
         ":DailyMeanOutput",
-        {"dcterms:type": "void:Dataset",
-         "dcterms:description": "Daily mean weather obs",
-         "prov:atLocation": pjoin(outputDir, 'dailymax'),
-         "prov:GeneratedAt": datetime.now().strftime(DATEFMT)}
-        )
+        {
+            "dcterms:type": "void:Dataset",
+            "dcterms:description": "Daily mean weather obs",
+            "prov:atLocation": pjoin(outputDir, "dailymax"),
+            "prov:GeneratedAt": datetime.now().strftime(DATEFMT),
+        },
+    )
     stormEventent = prov.entity(
         ":stormEventData",
-        {"dcterms:type": "void:Dataset",
-         "dcterms:description": "Weather observations around daily max wind gust",
-         "prov:atLocation": pjoin(outputDir, 'events'),
-         "prov:GeneratedAt": datetime.now().strftime(DATEFMT)}
+        {
+            "dcterms:type": "void:Dataset",
+            "dcterms:description": "Weather observations around daily max wind gust",
+            "prov:atLocation": pjoin(outputDir, "events"),
+            "prov:GeneratedAt": datetime.now().strftime(DATEFMT),
+        },
     )
 
     prov.wasGeneratedBy(dmaxent, provlabel)
     prov.wasGeneratedBy(dmeanent, provlabel)
     prov.wasGeneratedBy(stormEventent, provlabel)
-
 
 
 def processFile(filename: str, config) -> bool:
@@ -365,25 +401,24 @@ def processFile(filename: str, config) -> bool:
     :param config:  `ConfigParser` object
     """
 
-
     global g_stations
-    outputFormat = config.get('Output', 'Format', fallback='pickle')
+    outputFormat = config.get("Output", "Format", fallback="pickle")
     prov.entity(":DailyMaxOutput").add_attributes({"format": outputFormat})
     prov.entity(":DailyMeanOutput").add_attributes({"format": outputFormat})
     prov.entity(":stormEventData").add_attributes({"format": outputFormat})
 
-    outputDir = config.get('Output', 'Path')
-    threshold = config.getfloat('Input', 'Threshold')
+    outputDir = config.get("Output", "Path")
+    threshold = config.getfloat("Input", "Threshold")
     prov.entity(":stormEventData").add_attributes({"threshold": threshold})
-    ext = "pkl" if outputFormat=='pickle' else 'csv'
-    outfunc = "to_pickle" if outputFormat=='pickle' else 'to_csv'
+    ext = "pkl" if outputFormat == "pickle" else "csv"
+    outfunc = "to_pickle" if outputFormat == "pickle" else "to_csv"
     LOGGER.info(f"Loading data from {filename}")
     LOGGER.debug(f"Data will be written to {outputDir}")
     LOGGER.debug(f"Using {outputFormat} for output data")
     m = PATTERN.match(filename)
     stnNum = int(m.group(1))
-    stnState = g_stations.loc[stnNum, 'stnState']
-    stnName = g_stations.loc[stnNum, 'stnName']
+    stnState = g_stations.loc[stnNum, "stnState"]
+    stnName = g_stations.loc[stnNum, "stnName"]
     LOGGER.info(f"{stnName} - {stnNum} ({stnState})")
     filesize = flSize(filename)
     if filesize == 0:
@@ -392,29 +427,36 @@ def processFile(filename: str, config) -> bool:
     else:
 
         basename = f"{stnNum:06d}.{ext}"  # os.path.basename(filename)
-        dfmax, dfmean, eventdf = extractDailyMax(filename, stnState, stnName,
-                                                 stnNum, 'windgust',
-                                                 threshold=threshold)
+        dfmax, dfmean, eventdf = extractDailyMax(
+            filename, stnState, stnName, stnNum, "windgust", threshold=threshold
+        )
         if dfmax is None:
             LOGGER.warning(f"No data returned for {filename}")
         else:
-            LOGGER.debug(f"Writing data to {pjoin(outputDir, 'dailymax', basename)}")  # noqa: E501
-            getattr(dfmax, outfunc)(pjoin(outputDir, 'dailymax', basename))
-            getattr(dfmean, outfunc)(pjoin(outputDir, 'dailymean', basename))
+            LOGGER.debug(
+                f"Writing data to {pjoin(outputDir, 'dailymax', basename)}"
+            )  # noqa: E501
+            getattr(dfmax, outfunc)(pjoin(outputDir, "dailymax", basename))
+            getattr(dfmean, outfunc)(pjoin(outputDir, "dailymean", basename))
 
-            dfmax.to_pickle(pjoin(outputDir, 'dailymax', basename))
-            dfmean.to_pickle(pjoin(outputDir, 'dailymean', basename))
+            dfmax.to_pickle(pjoin(outputDir, "dailymax", basename))
+            dfmean.to_pickle(pjoin(outputDir, "dailymean", basename))
             if eventdf is not None:
-                LOGGER.debug(f"Writing data to {pjoin(outputDir, 'events', basename)}")  # noqa: E501
-                getattr(eventdf, outfunc)(pjoin(outputDir, 'events', basename))
-                eventdf.to_pickle(pjoin(outputDir, 'events', basename))
+                LOGGER.debug(
+                    f"Writing data to {pjoin(outputDir, 'events', basename)}"
+                )  # noqa: E501
+                getattr(eventdf, outfunc)(pjoin(outputDir, "events", basename))
+                eventdf.to_pickle(pjoin(outputDir, "events", basename))
                 e1 = prov.entity(
                     filename,
-                    {"dcterms:type": "void:dataset",
-                     "dcterms:description": "Gust event information",
-                     "prov:atLocation": pjoin(outputDir, 'events', basename),
-                     "prov:GeneratedAt": datetime.now().strftime(DATEFMT),
-                     "dcterms:format": outputFormat})
+                    {
+                        "dcterms:type": "void:dataset",
+                        "dcterms:description": "Gust event information",
+                        "prov:atLocation": pjoin(outputDir, "events", basename),
+                        "prov:GeneratedAt": datetime.now().strftime(DATEFMT),
+                        "dcterms:format": outputFormat,
+                    },
+                )
                 prov.wasDerivedFrom(provlabel, e1)
         rc = True
     return rc
@@ -429,13 +471,14 @@ def getStationList(stnfile: str) -> pd.DataFrame:
     :returns: :class:`pd.DataFrame`
     """
     LOGGER.debug(f"Retrieving list of stations from {stnfile}")
-    df = pd.read_csv(stnfile, sep=',', index_col='stnNum',
-                     names=ONEMINUTESTNNAMES,
-                     keep_default_na=False,
-                     converters={
-                         'stnName': str.strip,
-                         'stnState': str.strip
-                         })
+    df = pd.read_csv(
+        stnfile,
+        sep=",",
+        index_col="stnNum",
+        names=ONEMINUTESTNNAMES,
+        keep_default_na=False,
+        converters={"stnName": str.strip, "stnState": str.strip},
+    )
     LOGGER.debug(f"There are {len(df)} stations")
     return df
 
@@ -457,8 +500,9 @@ def wdir_diff(wd1, wd2):
     return res
 
 
-def extractDailyMax(filename, stnState, stnName, stnNum,
-                    variable='windgust', threshold=90.):
+def extractDailyMax(
+    filename, stnState, stnName, stnNum, variable="windgust", threshold=90.0
+):
     """
     Extract daily maximum value of `variable` from 1-minute observation records
     contained in `filename`
@@ -476,121 +520,194 @@ def extractDailyMax(filename, stnState, stnName, stnNum,
 
     LOGGER.debug(f"Reading station data from {filename}")
     try:
-        df = pd.read_csv(filename, sep=',', index_col=False,
-                         dtype=ONEMINUTEDTYPE,
-                         names=ONEMINUTENAMES,
-                         header=0,
-                         parse_dates={'datetimeLST': [7, 8, 9, 10, 11]},
-                         na_values=['####'],
-                         skipinitialspace=True)
+        df = pd.read_csv(
+            filename,
+            sep=",",
+            index_col=False,
+            dtype=ONEMINUTEDTYPE,
+            names=ONEMINUTENAMES,
+            header=0,
+            parse_dates={"datetimeLST": [7, 8, 9, 10, 11]},
+            na_values=["####"],
+            skipinitialspace=True,
+        )
     except Exception as err:
         LOGGER.exception(f"Cannot load data from {filename}: {err}")
         return None, None
     LOGGER.debug("Filtering on quality flags")
-    for var in ['temp', 'temp1max', 'temp1min', 'wbtemp',
-                'dewpoint', 'rh', 'windspd', 'windmin',
-                'winddir', 'windsd', 'windgust', 'mslp', 'stnp']:
-        df.loc[~df[f"{var}q"].isin(['Y']), [var]] = np.nan
+    for var in [
+        "temp",
+        "temp1max",
+        "temp1min",
+        "wbtemp",
+        "dewpoint",
+        "rh",
+        "windspd",
+        "windmin",
+        "winddir",
+        "windsd",
+        "windgust",
+        "mslp",
+        "stnp",
+    ]:
+        df.loc[~df[f"{var}q"].isin(["Y"]), [var]] = np.nan
 
     # Hacky way to convert from local standard time (LST) to UTC:
-    df['datetimeLST'] = pd.to_datetime(df.datetimeLST, format="%Y %m %d %H %M")
+    df["datetimeLST"] = pd.to_datetime(df.datetimeLST, format="%Y %m %d %H %M")
     LOGGER.debug("Converting from local to UTC time")
-    df['datetime'] = df.datetimeLST - timedelta(hours=TZ[stnState])
-    df['date'] = df.datetime.dt.date
+    df["datetime"] = df.datetimeLST - timedelta(hours=TZ[stnState])
+    df["date"] = df.datetime.dt.date
     # First have to set the datetime as index, then localize to UTC:
-    df.set_index('datetime', inplace=True)
+    df.set_index("datetime", inplace=True)
     df.set_index(df.index.tz_localize(tz="UTC"), inplace=True)
 
     LOGGER.debug("Determining daily maximum wind speed record")
-    dfmax = df.loc[df.groupby(['date'])[variable].idxmax().dropna()]
+    dfmax = df.loc[df.groupby(["date"])[variable].idxmax().dropna()]
 
-    dfdata = pd.DataFrame(columns=['gustratio', 'pretemp', 'posttemp',
-                                   'temprise', 'tempdrop', 'dirrate',
-                                   'prsdrop', 'prsrise', 'emergence'],
-                          index=dfmax.index)
+    dfdata = pd.DataFrame(
+        columns=[
+            "gustratio",
+            "pretemp",
+            "posttemp",
+            "temprise",
+            "tempdrop",
+            "dirrate",
+            "prsdrop",
+            "prsrise",
+            "emergence",
+        ],
+        index=dfmax.index,
+    )
     LOGGER.debug("Calculating other obs around daily max wind gust")
 
     frames = []
 
-    for idx in df.groupby(['date'])['windgust'].idxmax().dropna():
+    for idx in df.groupby(["date"])["windgust"].idxmax().dropna():
         startdt = idx - timedelta(hours=1)
         enddt = idx + timedelta(hours=1)
-        maxgust = df.loc[idx]['windgust']
-        wspd = df.loc[startdt: enddt]['windspd']
-        meangust = df.loc[startdt: enddt]['windgust'].mean()
-        pretemp = df.loc[startdt: idx]['temp'].mean()
-        posttemp = df.loc[idx: enddt]['temp'].mean()
-        tempchange = (df.loc[startdt: enddt]
-                      .rolling('1800s')['temp']
-                      .apply(lambda x: x[-1] - x[0])
-                      .agg(['min', 'max']))
-        maxtempchange = tempchange['max']
-        mintempchange = tempchange['min']
-        prschange = (df.loc[startdt: enddt]
-                     .rolling('1800s')['stnp']
-                     .apply(lambda x: x[-1] - x[0])
-                     .agg(['min', 'max']))
-        prsdrop = prschange['min']
-        prsrise = prschange['max']
-        dirchange = (df.loc[startdt: enddt]
-                     .rolling('1800s')['winddir']
-                     .apply(lambda x: wdir_diff(x[-1], x[0]))
-                     .max())
+        maxgust = df.loc[idx]["windgust"]
+        wspd = df.loc[startdt:enddt]["windspd"]
+        meangust = df.loc[startdt:enddt]["windgust"].mean()
+        pretemp = df.loc[startdt:idx]["temp"].mean()
+        posttemp = df.loc[idx:enddt]["temp"].mean()
+        tempchange = (
+            df.loc[startdt:enddt]
+            .rolling("1800s")["temp"]
+            .apply(lambda x: x[-1] - x[0])
+            .agg(["min", "max"])
+        )
+        maxtempchange = tempchange["max"]
+        mintempchange = tempchange["min"]
+        prschange = (
+            df.loc[startdt:enddt]
+            .rolling("1800s")["stnp"]
+            .apply(lambda x: x[-1] - x[0])
+            .agg(["min", "max"])
+        )
+        prsdrop = prschange["min"]
+        prsrise = prschange["max"]
+        dirchange = (
+            df.loc[startdt:enddt]
+            .rolling("1800s")["winddir"]
+            .apply(lambda x: wdir_diff(x[-1], x[0]))
+            .max()
+        )
 
         # Emergence: ratio of highest gust to average of next 10 highest
-        emerg = maxgust / df.loc[startdt: enddt]['windgust'].nlargest(11)[1:].mean()  # noqa: E501
-        dfdata.loc[idx] = [maxgust/meangust, pretemp, posttemp, maxtempchange,
-                           mintempchange, dirchange, prsdrop, prsrise, emerg]
+        emerg = (
+            maxgust / df.loc[startdt:enddt]["windgust"].nlargest(11)[1:].mean()
+        )  # noqa: E501
+        dfdata.loc[idx] = [
+            maxgust / meangust,
+            pretemp,
+            posttemp,
+            maxtempchange,
+            mintempchange,
+            dirchange,
+            prsdrop,
+            prsrise,
+            emerg,
+        ]
 
         if maxgust > threshold:
-            LOGGER.info(("Extracting additional data for gust event on "
-                         f"{datetime.strftime(idx, '%Y-%m-%d')}"))
-            deltavals = df.loc[startdt: enddt].index - idx
-            gustdf = df.loc[startdt: enddt].set_index(deltavals)
-            pct = ((gustdf.isnull() | gustdf.isna()).sum() * 100 / gustdf.index.size)  # noqa: E501
-            qccols = ['windgust', 'temp', 'stnp', 'winddir', 'dewpoint']
+            LOGGER.info(
+                (
+                    "Extracting additional data for gust event on "
+                    f"{datetime.strftime(idx, '%Y-%m-%d')}"
+                )
+            )
+            deltavals = df.loc[startdt:enddt].index - idx
+            gustdf = df.loc[startdt:enddt].set_index(deltavals)
+            pct = (
+                (gustdf.isnull() | gustdf.isna()).sum() * 100 / gustdf.index.size
+            )  # noqa: E501
+            qccols = ["windgust", "temp", "stnp", "winddir", "dewpoint"]
             if np.any(pct[qccols] > 20.0):
-                LOGGER.info(("Missing values found in gust, temperature,"
-                             "pressure, dewpoint or wind direction data"))
+                LOGGER.info(
+                    (
+                        "Missing values found in gust, temperature,"
+                        "pressure, dewpoint or wind direction data"
+                    )
+                )
                 continue
 
-            gustdf['tempanom'] = gustdf['temp'] - gustdf['temp'].mean()
-            gustdf['stnpanom'] = gustdf['stnp'] - gustdf['stnp'].mean()
-            gustdf['dpanom'] = gustdf['dewpoint'] - gustdf['dewpoint'].mean()
-            dirchange = (gustdf.rolling('1800s')['winddir']
-                               .apply(lambda x: wdir_diff(x[-1], x[0])))
-            gustdf['windchange'] = dirchange
+            gustdf["tempanom"] = gustdf["temp"] - gustdf["temp"].mean()
+            gustdf["stnpanom"] = gustdf["stnp"] - gustdf["stnp"].mean()
+            gustdf["dpanom"] = gustdf["dewpoint"] - gustdf["dewpoint"].mean()
+            dirchange = gustdf.rolling("1800s")["winddir"].apply(
+                lambda x: wdir_diff(x[-1], x[0])
+            )
+            gustdf["windchange"] = dirchange
 
-            u, v, uanom, vanom = windComponents(gustdf['windspd'].values,
-                                                gustdf['winddir'].values)
-            gustdf['u'] = u
-            gustdf['v'] = v
-            gustdf['uanom'] = uanom
-            gustdf['vanom'] = vanom
-            x = (gustdf.index/60/1_000_000_000)
-            newdf = gustdf[['windgust', 'temp', 'tempanom',
-                            'windspd', 'winddir', 'windchange',
-                            'u', 'v', 'uanom', 'vanom',
-                            'stnp', 'stnpanom', 'rainfall', 'rh',
-                            'dewpoint', 'dpanom']]
-            newdf['tdiff'] = x.values.astype(float)
-            newdf['date'] = datetime.strftime(idx, "%Y-%m-%d")
-            newdf['time'] = df.loc[startdt: enddt].index.values
+            u, v, uanom, vanom = windComponents(
+                gustdf["windspd"].values, gustdf["winddir"].values
+            )
+            gustdf["u"] = u
+            gustdf["v"] = v
+            gustdf["uanom"] = uanom
+            gustdf["vanom"] = vanom
+            x = gustdf.index / 60 / 1_000_000_000
+            newdf = gustdf[
+                [
+                    "windgust",
+                    "temp",
+                    "tempanom",
+                    "windspd",
+                    "winddir",
+                    "windchange",
+                    "u",
+                    "v",
+                    "uanom",
+                    "vanom",
+                    "stnp",
+                    "stnpanom",
+                    "rainfall",
+                    "rh",
+                    "dewpoint",
+                    "dpanom",
+                ]
+            ]
+            newdf["tdiff"] = x.values.astype(float)
+            newdf["date"] = datetime.strftime(idx, "%Y-%m-%d")
+            newdf["time"] = df.loc[startdt:enddt].index.values
             frames.append(newdf)
 
     LOGGER.debug("Joining other observations to daily maximum wind data")
     dfmax = dfmax.join(dfdata)
 
     LOGGER.debug("Determining daily mean values")
-    dfstats = df.groupby(['date']).aggregate({
-        variable: ['mean', 'std', 'max'],
-        'windspd': ['mean', 'std', 'max'],
-        'temp': ['mean', 'min', 'max'],
-        'temp1max': ['max'],
-        'temp1min': ['min'],
-        'wbtemp': ['mean', 'max'],
-        'dewpoint': ['mean', 'max']})
-    dfstats.columns = dfstats.columns.map('_'.join)
+    dfstats = df.groupby(["date"]).aggregate(
+        {
+            variable: ["mean", "std", "max"],
+            "windspd": ["mean", "std", "max"],
+            "temp": ["mean", "min", "max"],
+            "temp1max": ["max"],
+            "temp1min": ["min"],
+            "wbtemp": ["mean", "max"],
+            "dewpoint": ["mean", "max"],
+        }
+    )
+    dfstats.columns = dfstats.columns.map("_".join)
     if len(frames) > 0:
         eventdf = pd.concat(frames)
         return dfmax, dfstats, eventdf
@@ -610,10 +727,7 @@ def windComponents(windspd, winddir):
     :returns: `np.array` of U and V components (east and north)
     """
 
-    u, v = wind_components(
-        windspd * units.kph,
-        winddir * units.deg
-    )
+    u, v = wind_components(windspd * units.kph, winddir * units.deg)
     uanom = u.magnitude - np.nanmean(u.magnitude)
     vanom = v.magnitude - np.nanmean(v.magnitude)
     return u.magnitude, v.magnitude, uanom, vanom
