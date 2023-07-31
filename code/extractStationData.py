@@ -163,22 +163,25 @@ def main(config, verbose=False):
         },
     )
 
-    prov.actedOnBehalfOf(provlabel, f":{getpass.getuser()}")
-    prov.actedOnBehalfOf(f":{getpass.getuser()}", "GeoscienceAustralia")
-    prov.used(sys.argv[0], configent)
-    prov.used(provlabel, sys.argv[0])
 
     ListAllFiles(config)
-    processStationFiles(config)
+    # processStationFiles(config)
     processFiles(config)
 
     endtime = datetime.now().strftime(DATEFMT)
-    prov.activity(
+    extractionact = prov.activity(
         provlabel,
         starttime,
         endtime,
-        {"dcterms:title": provtitle, "dcterms:type": "void:Dataset"},
+        {
+            "dcterms:title": provtitle,
+            "dcterms:type": "void:Dataset"},
     )
+    prov.actedOnBehalfOf(extractionact, f":{getpass.getuser()}")
+    prov.actedOnBehalfOf(f":{getpass.getuser()}", "GeoscienceAustralia")
+    prov.used(provlabel, configent)
+    prov.wasAssociatedWith(extractionact, sys.argv[0])
+
     prov.serialize(pjoin(outputDir, "extraction.xml"), format="xml")
 
     for key in g_files.keys():
@@ -269,49 +272,6 @@ def expandFileSpecs(config, specs, category):
     """
     for spec in specs:
         expandFileSpec(config, spec, category)
-
-
-def processStationFiles(config):
-    """
-    Process all the station files to populate a global station file DataFrame
-
-    :param config: `ConfigParser` object
-    """
-
-    global g_files
-    global g_stations
-    global LOGGER
-    unknownDir = config.get("Defaults", "UnknownDir")
-    outputDir = config.get("Output", "Path", fallback=unknownDir)
-    stnlist = []
-    category = "StationFiles"
-
-    for f in g_files[category]:
-        LOGGER.info(f"Processing {f}")
-        stnlist.append(getStationList(f))
-    g_stations = pd.concat(stnlist)
-
-    # Create a GeoDataFrame for the station data:
-    gdf_stations = gpd.GeoDataFrame(
-        data=g_stations,
-        geometry=gpd.points_from_xy(g_stations.stnLon, g_stations.stnLat),
-    )
-
-    gdf_stations.set_crs(epsg=7844, inplace=True)
-    gdf_stations.to_file(pjoin(outputDir, "tsedstations.geojson"), driver="GeoJSON")
-
-    # Provenance:
-    stnlistent = prov.entity(
-        ":StationList",
-        {
-            "dcterms:type": "void:dataset",
-            "dcterms:description": "Station information",
-            "prov:atLocation": pjoin(outputDir, "tsedstations.geojson"),
-            "prov:GeneratedAt": datetime.now().strftime(DATEFMT),
-            "dcterms:format": "GeoJSON",
-        },
-    )
-    prov.wasGeneratedBy(stnlistent, provlabel, time=datetime.now().strftime(DATEFMT))
 
 
 def processFiles(config):
